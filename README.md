@@ -1,23 +1,4 @@
 # Analysis-and-implementation-of-distributed-gradient-coding-algorithms
-# Hierarchical Distributed Gradient Coding using Neural Networks
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Problem Statement](#problem-statement)
-- [System Architecture](#system-architecture)
-- [Mathematical Formulation](#mathematical-formulation)
-- [Methodology](#methodology)
-- [Neural Network: ZPredictor](#neural-network-zpredictor)
-- [Iterative Convergence: r and β](#iterative-convergence-r-and-β)
-- [Architecture Optimization](#architecture-optimization)
-- [Results](#results)
-- [Project Structure](#project-structure)
-- [Setup & Installation](#setup--installation)
-- [Usage](#usage)
-- [Dependencies](#dependencies)
-- [References](#references)
-
 ---
 
 # Overview
@@ -77,38 +58,225 @@ N = n_1 \times (n_2 + 1)
      ┌────┼────┐         ┌────┼────┐
      ▼    ▼    ▼         ▼    ▼    ▼
    [W1] [W2] [W3]      [W1] [W2] [W3]
-Level 0: Master node — collects final aggregated gradientsLevel 1 (Edge Nodes): n1 edge nodes — each aggregates gradients from its group of workersLevel 2 (Workers): n2 workers per edge node — each computes gradients over a data partition
+# Hierarchical Coded Distributed Learning Framework
 
-Straggler Tolerance:
+## System Architecture
 
-Level 2 waits for the k2 = n2 − ⌊α·n2⌋ fastest workersLevel 1 waits for the k1 = n1 − ⌊α·n1⌋ fastest edge nodes
+The proposed distributed learning framework follows a **three-level hierarchical structure**:
 
-Mathematical FormulationComputation and Communication TimesBoth times follow shifted exponential distributions (based on the CodedReduce framework):Computation time for each worker:
+- **Level 0 (Master Node):**  
+  Collects and aggregates the final gradients.
 
-Tcomp=a⋅r⋅D+Exp ⁣(λ1r⋅D),t≥a⋅r⋅DT_{comp} = a \cdot r \cdot D + \text{Exp}!\left(\frac{\lambda_1}{r \cdot D}\right), \quad t \geq a \cdot r \cdot DTcomp=a⋅r⋅D+Exp(r⋅Dλ1),t≥a⋅r⋅DCommunication time for each worker:
+- **Level 1 (Edge Nodes):**  
+  Contains `n1` edge nodes, where each edge node aggregates gradients from a group of workers.
 
-Tcomm=b⋅p+Exp ⁣(λ2p),t≥b⋅pT_{comm} = b \cdot p + \text{Exp}!\left(\frac{\lambda_2}{p}\right), \quad t \geq b \cdot pTcomm=b⋅p+Exp(pλ2),t≥b⋅pwhere:
+- **Level 2 (Worker Nodes):**  
+  Each edge node contains `n2` workers that compute gradients over assigned data partitions.
 
-D = 60,000 (dataset size, e.g., MNIST training samples)p = 784 (parameter/gradient vector dimension)r = computation load factor per workera, b = shift constants
+---
 
-Group Finish Time (Z)The total time per worker W = T_comp + T_comp, which follows a Hypoexponential distribution. The Group Finish Time at each edge node is the k2-th order statistic of n2 such workers:fZ(t)=n!(k−1)!(n−k)!⋅[FW(t)]k−1⋅[1−FW(t)]n−k⋅fW(t)f_Z(t) = \frac{n!}{(k-1)!(n-k)!} \cdot [F_W(t)]^{k-1} \cdot [1 - F_W(t)]^{n-k} \cdot f_W(t)fZ(t)=(k−1)!(n−k)!n!⋅[FW(t)]k−1⋅[1−FW(t)]n−k⋅fW(t)Shifted Exponential ApproximationZ is approximated as:Z∼cfit+Exp(μfit)Z \sim c_{\text{fit}} + \text{Exp}(\mu_{\text{fit}})Z∼cfit+Exp(μfit)Parameters c_fit and μ_fit are estimated using the Method of Moments (matching mean and variance of Z).Computation Load Factorr=1(ns+1)2+(ns+1)r = \frac{1}{\left(\frac{n}{s+1}\right)^2 + \left(\frac{n}{s+1}\right)}r=(s+1n)2+(s+1n)1where n = number of workers, s = number of stragglers.
+# Straggler Tolerance
 
-MethodologyThe solution pipeline consists of four stages:Stage 1: Parameter Calibration↓  Adjust λ1, λ2, a, b to match real-world timingStage 2: Dataset Generation↓  Vary (n2, a, α, λ1, r) → compute (c_fit, μ_fit)Stage 3: ZPredictor Neural Network↓  Train MLP: (n2, a, α, λ1, r) → (c_fit, μ_fit)Stage 4: Iterative r & β Convergence↓  Use ZPredictor in a fixed-point loopStage 5: Architecture Search↓  Enumerate all valid (n1, n2) for given N → find argmin E[T_iter]
+To mitigate the effect of slow or failed workers (stragglers), coded redundancy is introduced.
 
-Neural Network: ZPredictorComputing c_fit and μ_fit analytically for every possible (n1, n2) configuration is computationally expensive. A fully connected feedforward neural network (MLP) is trained to predict these parameters instantly.ArchitectureInput (5) → Linear(64) → BN → ReLU → Dropout(0.2)→ Linear(128) → BN → ReLU → Dropout(0.2)→ Linear(128) → BN → ReLU → Dropout(0.2)→ Linear(64)  → BN → ReLU → Dropout(0.2)→ Output (2)ComponentDetailInput featuresn2, a, α, λ1, rOutputc_fit, μ_fitHidden layers4 layers: 64 → 128 → 128 → 64RegularizationBatch Normalization + Dropout (p=0.2)Loss functionMean Squared Error (MSE)OptimizerAdamTraining data10,000 samplesTest R² Score0.97 – 0.99 on both outputsTraining CurveThe model shows rapid initial convergence with validation loss stabilizing well below training loss, indicating good generalization without overfitting.
+### Level 2 (Workers)
 
-Iterative Convergence: r and βIn a hierarchical system, computation loads differ across levels:
+Each edge node waits only for the fastest:
 
-Level 2 workers operate with base load rLevel 1 edge nodes have effective load r1 = r + β, where β ≥ 0 captures extra aggregation work
+\[
+k_2 = n_2 - \lfloor \alpha n_2 \rfloor
+\]
 
-Since r and β are mutually dependent, a fixed-point iteration is used:AlgorithmInitialize rRepeat until convergence:1. ZPredictor(n2, a, α, λ1, r) → (c_fit, μ_fit)2. Update β via mean-matching formula:β = [c_fit + (1/μ_fit)] / [D · (a + 1/λ1)] − r3. Update r via system load balance equationUntil |Δr| < ε and |Δβ| < ε
+workers.
 
-Convergence speed: Typically 5–7 iterations (updated model; earlier implementation took 7–10)Stability: Converges to a unique fixed point (r*, β*) for all valid (n1, n2) configurations
+### Level 1 (Edge Nodes)
 
-Converged quantities:
+The master node waits only for the fastest:
 
-r* → effective computation load for Level 2 workersβ* → extra computation load at the edge node levelr* + β* → total effective load at Level 1
+\[
+k_1 = n_1 - \lfloor \alpha n_1 \rfloor
+\]
 
-Architecture OptimizationOnce (r*, β*) are found, the expected iteration time E[T_iter] is computed analytically for a given (n1, n2). The optimizer:
+edge nodes.
 
-Enumerates all valid (n1, n2) pairs satisfying N = n1 × (n2 + 1)Runs the ZPredictor + convergence loop for each pairComputes E[T_iter]Returns (n1*, n2*) with minimum expected iteration time
+where:
+
+- \( \alpha \in [0,1) \) is the straggler fraction.
+- \( \lfloor \cdot \rfloor \) denotes the floor function.
+
+---
+
+# Mathematical Formulation
+
+## Computation and Communication Time Models
+
+Both computation and communication delays follow **shifted exponential distributions**, inspired by the CodedReduce framework.
+
+---
+
+## Worker Computation Time
+
+\[
+T_{\text{comp}} = a \cdot r \cdot D + \text{Exp}\left(\frac{\lambda_1}{rD}\right),
+\quad t \ge a r D
+\]
+
+where:
+
+- \( D = 60000 \) : dataset size
+- \( r \) : computation load factor
+- \( a \) : deterministic shift constant
+- \( \lambda_1 \) : computation rate parameter
+
+---
+
+## Worker Communication Time
+
+\[
+T_{\text{comm}} = b \cdot p + \text{Exp}\left(\frac{\lambda_2}{p}\right),
+\quad t \ge bp
+\]
+
+where:
+
+- \( p = 784 \) : gradient vector dimension
+- \( b \) : communication shift constant
+- \( \lambda_2 \) : communication rate parameter
+
+---
+
+# Total Worker Time
+
+The total worker completion time is:
+
+\[
+W = T_{\text{comp}} + T_{\text{comm}}
+\]
+
+Since \(W\) is the sum of two shifted exponentials, it follows a **Hypoexponential distribution**.
+
+---
+
+# Group Finish Time
+
+For each edge node, the completion time is determined by the
+\(k_2\)-th fastest worker among \(n_2\) workers.
+
+The corresponding order statistic distribution is:
+
+\[
+f_Z(t)=
+\frac{n!}{(k-1)!(n-k)!}
+[F_W(t)]^{k-1}
+[1-F_W(t)]^{n-k}
+f_W(t)
+\]
+
+where:
+
+- \(F_W(t)\) : CDF of worker completion time
+- \(f_W(t)\) : PDF of worker completion time
+
+---
+
+# Shifted Exponential Approximation
+
+The order statistic \(Z\) is approximated using another shifted exponential:
+
+\[
+Z \sim c_{\text{fit}} + \text{Exp}(\mu_{\text{fit}})
+\]
+
+The parameters:
+
+- \(c_{\text{fit}}\)
+- \(\mu_{\text{fit}}\)
+
+are estimated using the **Method of Moments** by matching the mean and variance of \(Z\).
+
+---
+
+# Computation Load Factor
+
+The computation load factor is defined as:
+
+\[
+r =
+\frac{1}{
+\left(\frac{n}{s+1}\right)^2
++
+\left(\frac{n}{s+1}\right)
+}
+\]
+
+where:
+
+- \(n\) : total workers
+- \(s\) : number of tolerated stragglers
+
+---
+
+# Methodology
+
+The complete solution pipeline consists of five stages.
+
+---
+
+## Stage 1: Parameter Calibration
+
+- Calibrate:
+  - \( \lambda_1 \)
+  - \( \lambda_2 \)
+  - \( a \)
+  - \( b \)
+
+using realistic computation and communication timings.
+
+---
+
+## Stage 2: Dataset Generation
+
+Generate training samples by varying:
+
+\[
+(n_2, a, \alpha, \lambda_1, r)
+\]
+
+and computing:
+
+\[
+(c_{\text{fit}}, \mu_{\text{fit}})
+\]
+
+using analytical moment matching.
+
+---
+
+## Stage 3: ZPredictor Neural Network
+
+A Multi-Layer Perceptron (MLP) is trained to instantly predict:
+
+\[
+(n_2, a, \alpha, \lambda_1, r)
+\rightarrow
+(c_{\text{fit}}, \mu_{\text{fit}})
+\]
+
+This eliminates expensive repeated analytical computations.
+
+---
+
+# Neural Network Architecture
+
+```text
+Input(5)
+   ↓
+Linear(64) → BatchNorm → ReLU → Dropout(0.2)
+   ↓
+Linear(128) → BatchNorm → ReLU → Dropout(0.2)
+   ↓
+Linear(128) → BatchNorm → ReLU → Dropout(0.2)
+   ↓
+Linear(64) → BatchNorm → ReLU → Dropout(0.2)
+   ↓
+Output(2)
