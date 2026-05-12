@@ -1,4 +1,5 @@
 # Analysis-and-implementation-of-distributed-gradient-coding-algorithms
+
 ---
 
 # Overview
@@ -58,7 +59,9 @@ N = n_1 \times (n_2 + 1)
      ┌────┼────┐         ┌────┼────┐
      ▼    ▼    ▼         ▼    ▼    ▼
    [W1] [W2] [W3]      [W1] [W2] [W3]
-# Hierarchical Coded Distributed Learning Framework
+```
+
+---
 
 ## System Architecture
 
@@ -280,3 +283,137 @@ Linear(128) → BatchNorm → ReLU → Dropout(0.2)
 Linear(64) → BatchNorm → ReLU → Dropout(0.2)
    ↓
 Output(2)
+```
+
+| Component | Details |
+|---|---|
+| Input Features | \(n_2, a, \alpha, \lambda_1, r\) |
+| Outputs | \(c_{\text{fit}}, \mu_{\text{fit}}\) |
+| Hidden Layers | 64 → 128 → 128 → 64 |
+| Activation | ReLU |
+| Regularization | BatchNorm + Dropout(0.2) |
+| Loss Function | Mean Squared Error (MSE) |
+| Optimizer | Adam |
+| Training Samples | 10,000 |
+| Test \(R^2\) Score | 0.97 – 0.99 |
+
+---
+
+# Training Characteristics
+
+- Rapid convergence during initial epochs
+- Validation loss stabilizes below training loss
+- Minimal overfitting
+- Strong generalization across unseen configurations
+
+---
+
+# Iterative Convergence of \(r\) and \(\beta\)
+
+The hierarchical structure introduces different loads at different levels.
+
+- Level 2 workers operate with load:
+
+\[
+r
+\]
+
+- Level 1 edge nodes operate with effective load:
+
+\[
+r_1 = r + \beta
+\]
+
+where:
+
+- \(\beta \ge 0\) represents additional aggregation overhead.
+
+Since \(r\) and \(\beta\) are interdependent, a fixed-point iteration is used.
+
+---
+
+# Fixed-Point Iteration Algorithm
+
+```text
+Initialize r
+
+Repeat until convergence:
+
+1. ZPredictor(n2, a, α, λ1, r)
+      → (c_fit, μ_fit)
+
+2. Update β:
+
+   β =
+   [c_fit + (1/μ_fit)]
+   -------------------
+   D(a + 1/λ1)
+   − r
+
+3. Update r using
+   the system load balance equation
+
+Until:
+|Δr| < ε
+and
+|Δβ| < ε
+```
+
+---
+
+# Convergence Properties
+
+- Typical convergence:
+  - 5–7 iterations (updated implementation)
+- Earlier implementation:
+  - 7–10 iterations
+- Converges to a unique fixed point for all valid configurations.
+
+Final converged quantities:
+
+- \(r^*\) : effective worker computation load
+- \(\beta^*\) : edge-node aggregation overhead
+- \(r^* + \beta^*\) : total Level-1 computation load
+
+---
+
+# Architecture Optimization
+
+After obtaining converged values \((r^*, \beta^*)\), the expected iteration time:
+
+\[
+E[T_{\text{iter}}]
+\]
+
+is computed analytically.
+
+The optimizer performs:
+
+1. Enumeration of all valid \((n_1, n_2)\) pairs satisfying:
+
+\[
+N = n_1 (n_2 + 1)
+\]
+
+2. Fixed-point convergence using the trained ZPredictor
+
+3. Computation of expected iteration time
+
+4. Selection of the optimal hierarchy:
+
+\[
+(n_1^*, n_2^*)
+=
+\arg\min E[T_{\text{iter}}]
+\]
+
+---
+
+# Key Contributions
+
+- Hierarchical coded distributed learning framework
+- Straggler-resilient gradient aggregation
+- Shifted exponential approximation for order statistics
+- Neural network based latency prediction
+- Fixed-point convergence framework for load balancing
+- Analytical architecture optimization for minimum iteration time
